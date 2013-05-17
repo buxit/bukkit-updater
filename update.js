@@ -27,7 +27,10 @@ function latestPlugin(tr, q) {
   var fn = select(tr, 'td.col-filename');
   if(q.cnt >= 1)
     return;
-  if(fn[0] && fn[0].children[0].data.match(/\.jar/)){
+  var ext=/\.jar/;
+  if(q.lfile.match(/\.zip/))
+    ext=/\.zip/;
+  if(fn[0] && fn[0].children[0].data.match(ext)){
     q.cnt++;
     var jar=fn[0].children[0].data.replace(/\s*/g, '');
     if(a[0])
@@ -140,17 +143,33 @@ function dl(q) {
       dl(q);
       return;
     }
-    var fh = fs.createWriteStream(q.lfile);
+    var iszip=q.lfile.match(/\.zip/);
+    var data='';
+    if(!iszip)
+      var fh = fs.createWriteStream(q.lfile);
     res.on('data', function (chunk) {
-      fh.write(chunk);
+      if(iszip)
+        data+=chunk.toString('binary');
+      else
+        fh.write(chunk);
       process.stdout.write(".");
     });
     res.on('end', function () {
-      fh.on('close', function() {
-        process.stdout.write("\ndownloaded "+q.url);
-        process.stdout.write(" ("+res.headers['content-length']+" bytes, "+fh.bytesWritten+" bytes written)\n");
-      });
-      fh.end();
+      if(iszip) {
+        process.stdout.write(" ("+res.headers['content-length']+" bytes read)\n");
+        var zip = new require('node-zip')(data, {base64: false, checkCRC32: true});
+        for(filepath in zip.files) {
+          var file = zip.files[filepath];
+          process.stdout.write("Unzipping to "+config.bukkitdir+'/plugins/'+filepath+"\n");
+          fs.writeFileSync(config.bukkitdir+'/plugins/'+filepath, file.data, 'binary');
+        }
+      } else {
+        fh.on('close', function() {
+          process.stdout.write("\ndownloaded "+q.url);
+          process.stdout.write(" ("+res.headers['content-length']+" bytes, "+fh.bytesWritten+" bytes written)\n");
+        });
+        fh.end();
+      }
     });
     req.on('error', function(e) {
       console.log('problem with request: ' + e.message);
