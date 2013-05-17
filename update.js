@@ -1,9 +1,5 @@
 #!/usr/bin/node
-var plugins = [
-  'worldedit',
-  'worldguard',
-  'limitedcreative',
-];
+var config=require('./config.js')
 var select = require('soupselect').select;
 var htmlparser = require("htmlparser");
 var http = require('http');
@@ -13,8 +9,8 @@ var readline = require('readline');
 var printf = require('printf');
 
 var queries = [
-  { r: { hostname: 'dl.bukkit.org', path: '/' }, cb: latestCB, el: 'div#downloadButton span', file: 'craftbukkit.jar', url:'http://dl.bukkit.org/latest-rb/craftbukkit.jar' },
-  { r: { hostname: 'dl.bukkit.org', path: '/' }, cb: latestCB, el: 'div#downloadButtonBeta span', file: 'craftbukkit-beta.jar', url:'http://dl.bukkit.org/latest-beta/craftbukkit-beta.jar'},
+  { r: { hostname: 'dl.bukkit.org', path: '/' }, cb: latestCB, el: 'div#downloadButton span', file: 'craftbukkit.jar', url:'http://dl.bukkit.org/latest-rb/craftbukkit.jar', lfile:config.bukkitdir+'/craftbukkit.jar' },
+  { r: { hostname: 'dl.bukkit.org', path: '/' }, cb: latestCB, el: 'div#downloadButtonBeta span', file: 'craftbukkit-beta.jar', url:'http://dl.bukkit.org/latest-beta/craftbukkit-beta.jar', lfile:config.bukkitdir+'/craftbukkit.jar'},
 ];
 
 function latestCB(tr, q) {
@@ -48,20 +44,20 @@ function pluginUrl(a, q) {
   q.url=a.attribs.href+'';
 }
 
-for(i in plugins) {
-  var p=plugins[i];
-  queries.push( { r: { hostname: 'dev.bukkit.org', path: '/server-mods/'+p+'/files/' }, cb: latestPlugin, el: 'table.listing tr' });
+for(i in config.plugins) {
+  var p=config.plugins[i];
+  queries.push( { r: { hostname: 'dev.bukkit.org', path: '/server-mods/'+p.name+'/files/' }, cb: latestPlugin, el: 'table.listing tr', lfile:config.bukkitdir+'/plugins/'+p.lfile });
 }
 
 for(i in queries){
   var q=queries[i];
   q.cnt=0;
-  query2(q, function(res) { 
+  query(q, function(res) { 
     if(res.r.hostname=='dev.bukkit.org') {
       res.r.path=res.link;
       res.cb = pluginUrl;
       res.el = 'li.user-action-download a'
-      query2(res, addResult);
+      query(res, addResult);
     } else
       addResult();
   } );
@@ -90,7 +86,7 @@ function addResult(){
         if(answer.toLowerCase() == 'y' || answer == '') {
           for(i in queries){
             var q=queries[i];
-            dl2(q);
+            dl(q);
           }
         }
       });
@@ -98,7 +94,7 @@ function addResult(){
   }
 }
 
-function query2(q, ready) {
+function query(q, ready) {
   var req = http.request(q.r, function(res) {
     //    console.log('STATUS: ' + res.statusCode);
     //    console.log('HEADERS: ' + JSON.stringify(res.headers));
@@ -134,17 +130,17 @@ function query2(q, ready) {
   req.end();
 };
 
-function dl2(q) {
+function dl(q) {
   if(q.skip)
     return;
   var req = http.get(q.url, function(res) {
     if(res.statusCode >= 300 && res.statusCode < 400) {
       process.stdout.write("R");
       q.url=res.headers.location;
-      dl2(q);
+      dl(q);
       return;
     }
-    var fh = fs.createWriteStream(q.file);
+    var fh = fs.createWriteStream(q.lfile);
     res.on('data', function (chunk) {
       fh.write(chunk);
       process.stdout.write(".");
