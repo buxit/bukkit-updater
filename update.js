@@ -7,6 +7,11 @@ var fs = require('fs');
 var querystring = require('querystring');
 var readline = require('readline');
 var printf = require('printf');
+try {
+  var versions = require('./.bukkit-updater.versions.json');
+} catch(e) {
+  var versions = [];
+}
 
 var queries = [
   { r: { hostname: 'dl.bukkit.org', path: '/' }, cb: latestCB, el: 'div#downloadButton span', file: 'craftbukkit.jar', url:'http://dl.bukkit.org/latest-rb/craftbukkit.jar', lfile:config.bukkitdir+'/craftbukkit.jar' },
@@ -18,11 +23,13 @@ function latestCB(tr, q) {
     var v=info.match(/[0-9]*\.[0-9]*\.[0-9].[^ ]*/);
     if(v) {
       q.ver=v[0];
+      q.cbver=v[0];
     }
 }
 
 function latestPlugin(tr, q) {
   var a = select(tr, 'td.col-file a');
+  var na = select(tr, 'td.col-file');
   var vs = select(tr, 'td.col-game-version li');
   var fn = select(tr, 'td.col-filename');
   if(q.cnt >= 1)
@@ -36,9 +43,10 @@ function latestPlugin(tr, q) {
     if(a[0])
       q.link=a[0].attribs.href;
     q.file=jar;
-    q.ver=[];
+    q.cbver=[];
+    q.ver=a[0].children[0].data.replace(/\s+/g, ' ');
     vs.forEach(function(v) {
-      q.ver.push(v.children[0].data);
+      q.cbver.push(v.children[0].data);
     });
   }
 }
@@ -49,7 +57,7 @@ function pluginUrl(a, q) {
 
 for(i in config.plugins) {
   var p=config.plugins[i];
-  queries.push( { r: { hostname: 'dev.bukkit.org', path: '/server-mods/'+p.name+'/files/' }, cb: latestPlugin, el: 'table.listing tr', lfile:config.bukkitdir+'/plugins/'+p.lfile });
+  queries.push( { r: { hostname: 'dev.bukkit.org', path: '/bukkit-mods/'+p.name+'/files/' }, cb: latestPlugin, el: 'table.listing tr', lfile:config.bukkitdir+'/plugins/'+p.lfile });
 }
 
 for(i in queries){
@@ -77,7 +85,9 @@ function addResult(){
     process.stdout.write("\n");
     for(i in queries){
       var q=queries[i];
-      printf(process.stdout, '%-30s : %-30s %-6s: %-30s\n', q.file, q.ver, q.skip ? "(skip)" : "", q.url);
+      if(q.ver <= versions[q.lfile])
+        q.skip=1;
+      printf(process.stdout, '%-40s : %-40s %-6s : %-30s  : %-30s\n', q.file, q.ver, q.skip ? "(skip)" : "", q.cbver, q.url);
     }
     if(process.stdin.isTTY) {
       var rl = readline.createInterface({
@@ -87,9 +97,21 @@ function addResult(){
       rl.question("Download [Y/n]? ", function(answer) {
         rl.close();
         if(answer.toLowerCase() == 'y' || answer == '') {
+          var cnt=0;
+          var cntok=0;
+          var downloads=new Object;
           for(i in queries){
             var q=queries[i];
-            dl(q);
+            if(!q.skip) {
+              cnt++;
+              dl(q, function(dl) {
+                cntok++;
+                console.log(dl.lfile + ": " + cntok + "/" + cnt);
+                downloads[dl.lfile]=dl.ver; if(cntok == cnt) {
+                  fs.writeFileSync(__dirname+'/.bukkit-updater.versions.json', JSON.stringify(downloads), 'binary');
+                }
+              });
+            }
           }
         }
       });
@@ -113,8 +135,9 @@ function query(q, ready) {
         } else {
           var trs = select(dom, q.el);
           var csvline='';
-          if(!trs) {
-            console.error("Error: no 'div#ServicesContent table tr'");
+          if(trs.length == 0) {
+            console.log(data);
+            console.error("Error: no element matches '"+q.el+"'");
             return;
           }
           process.stdout.write(".");
@@ -133,14 +156,14 @@ function query(q, ready) {
   req.end();
 };
 
-function dl(q) {
+function dl(q, callback) {
   if(q.skip)
     return;
   var req = http.get(q.url, function(res) {
     if(res.statusCode >= 300 && res.statusCode < 400) {
       process.stdout.write("R");
       q.url=res.headers.location;
-      dl(q);
+      dl(q, callback);
       return;
     }
     var iszip=q.lfile.match(/\.zip/);
@@ -162,14 +185,17 @@ function dl(q) {
           var file = zip.files[filepath];
           process.stdout.write("Unzipping to "+config.bukkitdir+'/plugins/'+filepath+"\n");
           fs.writeFileSync(config.bukkitdir+'/plugins/'+filepath, file.data, 'binary');
+          q.downloaded=true;
         }
       } else {
         fh.on('close', function() {
           process.stdout.write("\ndownloaded "+q.url);
           process.stdout.write(" ("+res.headers['content-length']+" bytes, "+fh.bytesWritten+" bytes written)\n");
+          q.downloaded=true;
         });
         fh.end();
       }
+    callback(q);
     });
     req.on('error', function(e) {
       console.log('problem with request: ' + e.message);
