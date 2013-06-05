@@ -4,6 +4,7 @@ var select = require('soupselect').select;
 var htmlparser = require("htmlparser");
 var http = require('http');
 var fs = require('fs');
+var util=require('util');
 var querystring = require('querystring');
 var readline = require('readline');
 var printf = require('printf');
@@ -77,19 +78,30 @@ for(i in queries){
 var cnt=0;
 function addResult(){
   cnt++; 
+  var dlcnt=0;
   if(cnt==queries.length) {
     if(queries[0].ver > queries[1].ver)
       queries[1].skip=1;
     else
       queries[0].skip=1;
     process.stdout.write("\n");
+    var strlens=[0,0,0];
+    for(i in queries){
+      var q=queries[i];
+      strlens[0] = Math.max(strlens[0], q.file.length);
+      strlens[1] = Math.max(strlens[1], q.ver.length);
+      strlens[2] = Math.max(strlens[2], util.isArray(q.cbver) ? q.cbver.join(",").length : q.cbver.length);
+    }
     for(i in queries){
       var q=queries[i];
       if(q.ver <= versions[q.lfile])
         q.skip=1;
-      printf(process.stdout, '%-40s : %-40s %-6s : %-30s  : %-30s\n', q.file, q.ver, q.skip ? "(skip)" : "", q.cbver, q.url);
+      //printf(process.stdout, '%-'+strlens[0]+'s : %-'+strlens[1]+'s %-6s : %-'+strlens[2]+'s : %-30s\n', q.file, q.ver, q.skip ? "(skip)" : "", q.cbver, q.url);
+      printf(process.stdout, '%-'+strlens[0]+'s : %-'+strlens[1]+'s %-6s : %-'+strlens[2]+'s\n', q.file, q.ver, q.skip ? "(skip)" : "", q.cbver);
+      if(!q.skip)
+        dlcnt++;
     }
-    if(process.stdin.isTTY) {
+    if(process.stdin.isTTY && dlcnt) {
       var rl = readline.createInterface({
         input: process.stdin,
         output: process.stdout
