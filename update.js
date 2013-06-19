@@ -8,6 +8,8 @@ var util=require('util');
 var querystring = require('querystring');
 var readline = require('readline');
 var printf = require('printf');
+var RconModule = require('rcon');
+
 try {
   var versions = require('./.bukkit-updater.versions.json');
 } catch(e) {
@@ -58,7 +60,7 @@ function pluginUrl(a, q) {
 
 for(i in config.plugins) {
   var p=config.plugins[i];
-  queries.push( { r: { hostname: 'dev.bukkit.org', path: '/bukkit-mods/'+p.name+'/files/' }, cb: latestPlugin, el: 'table.listing tr', lfile:config.bukkitdir+'/plugins/'+p.lfile });
+  queries.push( { r: { hostname: 'dev.bukkit.org', path: '/bukkit-plugins/'+p.name+'/files/' }, cb: latestPlugin, el: 'table.listing tr', lfile:config.bukkitdir+'/plugins/'+p.lfile });
 }
 
 for(i in queries){
@@ -109,6 +111,7 @@ function addResult(){
       rl.question("Download [Y/n]? ", function(answer) {
         rl.close();
         if(answer.toLowerCase() == 'y' || answer == '') {
+          stopServer();
           var cnt=0;
           var cntok=0;
           var downloads=new Object;
@@ -119,10 +122,13 @@ function addResult(){
               dl(q, function(dl) {
                 cntok++;
                 console.log(dl.lfile + ": " + cntok + "/" + cnt);
-                downloads[dl.lfile]=dl.ver; if(cntok == cnt) {
+                downloads[dl.lfile]=dl.ver;
+                if(cntok == cnt) {
                   fs.writeFileSync(__dirname+'/.bukkit-updater.versions.json', JSON.stringify(downloads), 'binary');
                 }
               });
+            } else {
+              downloads[q.lfile]=q.ver;
             }
           }
         }
@@ -214,3 +220,22 @@ function dl(q, callback) {
     });
   });
 };
+
+function stopServer() {
+  var rcon = new RconModule(config.rcon.host, config.rcon.port, config.rcon.password);
+  rcon.on('auth', function() {
+    console.log('authenticated to rcon.');
+    rcon.send("stop");
+  }).on('connect', function() {
+    console.log('rcon connected.');
+  }).on('error', function(str) {
+    console.log('rcon error: '+str);
+  }).on('response', function(str) {
+    console.log('rcon response: '+str);
+    rcon.disconnect();
+  }).on('end', function() {
+    console.log('rcon closed.');
+  });
+  rcon.connect();
+}
+
